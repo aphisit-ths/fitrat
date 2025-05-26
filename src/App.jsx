@@ -1,12 +1,59 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Calendar, TrendingDown, Target, Activity, Coffee, Utensils, Scale, Clock } from 'lucide-react';
+import { Calendar, TrendingDown, Target, Activity, Coffee, Utensils, Scale, Clock, Wifi, WifiOff, Download, X } from 'lucide-react';
 
 const FitnessTracker = () => {
   const [activeTab, setActiveTab] = useState('weight');
   const [currentWeight, setCurrentWeight] = useState(105.0);
   const [workoutData, setWorkoutData] = useState({});
   const [weightHistory, setWeightHistory] = useState([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+
+  // PWA Install Prompt Detection
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallPrompt(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // PWA Online/Offline Detection
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // PWA Install Handler
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`User response: ${outcome}`);
+      setDeferredPrompt(null);
+      setShowInstallPrompt(false);
+    }
+  };
+
+  const dismissInstallPrompt = () => {
+    setShowInstallPrompt(false);
+  };
 
   // ฟังก์ชันสำหรับจัดการ localStorage
   const saveToStorage = (key, data) => {
@@ -446,11 +493,57 @@ const FitnessTracker = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* PWA Install Prompt */}
+      {showInstallPrompt && (
+        <div className="fixed top-0 left-0 right-0 bg-blue-600 text-white p-3 z-50 shadow-lg">
+          <div className="max-w-md mx-auto flex items-center justify-between">
+            <div className="flex items-center">
+              <Download className="w-5 h-5 mr-2" />
+              <div>
+                <p className="text-sm font-medium">ติดตั้งแอป Fitness Rat</p>
+                <p className="text-xs opacity-90">ใช้งานได้แม้ไม่มีอินเทอร์เน็ต</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleInstallApp}
+                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium"
+              >
+                ติดตั้ง
+              </button>
+              <button
+                onClick={dismissInstallPrompt}
+                className="text-white hover:text-gray-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Offline Indicator */}
+      {!isOnline && (
+        <div className={`bg-orange-500 text-white text-center py-2 text-sm ${showInstallPrompt ? 'mt-16' : ''}`}>
+          <WifiOff className="w-4 h-4 inline mr-2" />
+          ออฟไลน์ - ข้อมูลจะซิงค์เมื่อกลับมาออนไลน์
+        </div>
+      )}
+
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4">
-        <div className="max-w-md mx-auto">
-          <h1 className="text-xl font-bold mb-1">Oat's Fitness Journey</h1>
-          <p className="text-blue-100 text-sm">เป้าหมาย: 105 → 90 กก.</p>
+      <div className={`bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 ${showInstallPrompt ? 'mt-16' : ''}`}>
+        <div className="max-w-md mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="text-xl font-bold mb-1">Oat's Fitness Journey</h1>
+            <p className="text-blue-100 text-sm">เป้าหมาย: 105 → 90 กก.</p>
+          </div>
+          <div className="flex items-center space-x-2">
+            {isOnline ? (
+              <Wifi className="w-5 h-5 text-green-300" />
+            ) : (
+              <WifiOff className="w-5 h-5 text-orange-300" />
+            )}
+          </div>
         </div>
       </div>
 
@@ -598,7 +691,11 @@ const FitnessTracker = () => {
 
         {/* Footer */}
         <div className="text-center text-xs text-gray-400 py-4">
-          สู้ๆ โอ๊ต! เป้าหมายอยู่ไม่ไกลแล้ว 💪
+          <div>สู้ๆ โอ๊ต! เป้าหมายอยู่ไม่ไกลแล้ว 💪</div>
+          <div className="mt-1">📱 PWA Ready - ติดตั้งผ่าน browser ได้</div>
+          {!showInstallPrompt && !deferredPrompt && (
+            <div className="mt-1 text-green-600">✅ แอปพร้อมใช้งานออฟไลน์</div>
+          )}
         </div>
       </div>
     </div>
