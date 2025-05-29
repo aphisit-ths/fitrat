@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Calendar, TrendingDown, Target, Activity, Coffee, Utensils, Scale, Clock, Wifi, WifiOff, Download, X } from 'lucide-react';
+import { Calendar, TrendingDown, Target, Activity, Coffee, Utensils, Scale, Clock, Wifi, WifiOff, Download, X, AlertCircle } from 'lucide-react';
+import { profileService, weightService, workoutService, checkSupabaseConnection } from './lib/supabase';
 
 const FitnessTracker = () => {
   const [activeTab, setActiveTab] = useState('weight');
@@ -10,6 +11,12 @@ const FitnessTracker = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  
+  // New states for Supabase integration
+  const [isLoading, setIsLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState('synced'); // 'synced', 'syncing', 'error', 'offline'
+  const [error, setError] = useState(null);
+  const [pendingSync, setPendingSync] = useState([]);
 
   // PWA Install Prompt Detection
   useEffect(() => {
@@ -20,39 +27,143 @@ const FitnessTracker = () => {
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
   // PWA Online/Offline Detection
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncPendingChanges();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncStatus('offline');
+    };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
-  // PWA Install Handler
-  const handleInstallApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`User response: ${outcome}`);
-      setDeferredPrompt(null);
-      setShowInstallPrompt(false);
+  // Load initial data from Supabase
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  // Auto-sync when online
+  useEffect(() => {
+    if (isOnline && pendingSync.length > 0) {
+      syncPendingChanges();
+    }
+  }, [isOnline, pendingSync]);
+
+  const loadInitialData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Check if we can connect to Supabase
+      const canConnect = await checkSupabaseConnection();
+      
+      if (canConnect) {
+        // Load from Supabase
+        const [profile, weights, workouts] = await Promise.all([
+          profileService.getProfile(),
+          weightService.getWeightEntries(),
+          workoutService.getWorkoutEntries()
+        ]);
+
+        // Set current weight from profile or latest weight entry
+        if (profile?.current_weight) {
+          setCurrentWeight(profile.current_weight);
+        } else if (weights.length > 0) {
+          const latest = weights[weights.length - 1];
+          setCurrentWeight(latest.weight);
+        }
+
+        setWeightHistory(weights);
+        
+        // Convert workout entries to the format expected by the UI
+        const workoutMap = {};
+        workouts.forEach(workout => {
+          workoutMap[workout.date] = {
+            id: workout.id,
+            startTime: workout.start_time,
+            endTime: workout.end_time,
+            duration: workout.duration,
+            intensity: workout.intensity,
+            completed: workout.completed,
+            actualSeconds: workout.actual_seconds,
+            type: workout.workout_type
+          };
+        });
+        setWorkoutData(workoutMap);
+        
+        setSyncStatus('synced');
+        
+        // Save to localStorage as backup
+        saveToStorage('currentWeight', profile?.current_weight || weights[weights.length - 1]?.weight || 105.0);
+        saveToStorage('weightHistory', weights);
+        saveToStorage('workoutData', workoutMap);
+      } else {
+        // Load from localStorage as fallback
+        loadFromLocalStorage();
+        setSyncStatus('offline');
+      }
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      setError('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่');
+      loadFromLocalStorage();
+      setSyncStatus('error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const dismissInstallPrompt = () => {
-    setShowInstallPrompt(false);
+  const loadFromLocalStorage = () => {
+    const storedWeight = getFromStorage('currentWeight', 105.0);
+    const storedWorkoutData = getFromStorage('workoutData', {});
+    const storedWeightHistory = getFromStorage('weightHistory', []);
+    
+    setCurrentWeight(storedWeight);
+    setWorkoutData(storedWorkoutData);
+    setWeightHistory(storedWeightHistory);
+  };
+
+  const syncPendingChanges = async () => {
+    if (!isOnline || pendingSync.length === 0) return;
+    
+    try {
+      setSyncStatus('syncing');
+      
+      for (const change of pendingSync) {
+        switch (change.type) {
+          case 'weight':
+            await weightService.addWeightEntry(change.date, change.weight);
+            await profileService.updateProfile({ current_weight: change.weight });
+            break;
+          case 'workout':
+            await workoutService.upsertWorkoutEntry(change.date, change.data);
+            break;
+        }
+      }
+      
+      setPendingSync([]);
+      setSyncStatus('synced');
+      setError(null);
+    } catch (error) {
+      console.error('Sync error:', error);
+      setSyncStatus('error');
+      setError('ไม่สามารถซิงค์ข้อมูลได้');
+    }
+  };
+
+  const addToPendingSync = (change) => {
+    setPendingSync(prev => [...prev.filter(p => !(p.type === change.type && p.date === change.date)), change]);
   };
 
   // ฟังก์ชันสำหรับจัดการ localStorage
@@ -73,17 +184,6 @@ const FitnessTracker = () => {
       return defaultValue;
     }
   };
-
-  // โหลดข้อมูลจาก localStorage ตอน mount
-  useEffect(() => {
-    const storedWeight = getFromStorage('currentWeight', 105.0);
-    const storedWorkoutData = getFromStorage('workoutData', {});
-    const storedWeightHistory = getFromStorage('weightHistory', []);
-    
-    setCurrentWeight(storedWeight);
-    setWorkoutData(storedWorkoutData);
-    setWeightHistory(storedWeightHistory);
-  }, []);
 
   // ฟังก์ชันช่วยสำหรับวันที่
   const getDateString = (date = new Date()) => {
@@ -170,23 +270,48 @@ const FitnessTracker = () => {
 
   const WeightInput = () => {
     const [inputWeight, setInputWeight] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
     
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
       if (inputWeight && !isNaN(inputWeight) && parseFloat(inputWeight) > 0) {
         const newWeight = parseFloat(inputWeight);
         const today = getDateString();
         
-        // อัพเดทน้ำหนักปัจจุบัน
-        setCurrentWeight(newWeight);
-        saveToStorage('currentWeight', newWeight);
-        
-        // เพิ่มเข้าประวัติ
-        const newHistory = [...weightHistory.filter(entry => entry.date !== today), { date: today, weight: newWeight }];
-        setWeightHistory(newHistory);
-        saveToStorage('weightHistory', newHistory);
-        
-        setInputWeight('');
-        alert('บันทึกน้ำหนักเรียบร้อย!');
+        setIsSubmitting(true);
+        try {
+          // Update local state immediately
+          setCurrentWeight(newWeight);
+          const newHistory = [...weightHistory.filter(entry => entry.date !== today), { date: today, weight: newWeight }];
+          setWeightHistory(newHistory);
+          
+          // Save to localStorage
+          saveToStorage('currentWeight', newWeight);
+          saveToStorage('weightHistory', newHistory);
+          
+          if (isOnline) {
+            try {
+              // Try to sync immediately
+              await weightService.addWeightEntry(today, newWeight);
+              await profileService.updateProfile({ current_weight: newWeight });
+              setSyncStatus('synced');
+            } catch (error) {
+              // Add to pending sync if online sync fails
+              addToPendingSync({ type: 'weight', date: today, weight: newWeight });
+              setSyncStatus('error');
+            }
+          } else {
+            // Add to pending sync for offline mode
+            addToPendingSync({ type: 'weight', date: today, weight: newWeight });
+          }
+          
+          setInputWeight('');
+          alert('บันทึกน้ำหนักเรียบร้อย!');
+        } catch (error) {
+          console.error('Error saving weight:', error);
+          alert('เกิดข้อผิดพลาดในการบันทึก');
+        } finally {
+          setIsSubmitting(false);
+        }
       }
     };
 
@@ -210,13 +335,15 @@ const FitnessTracker = () => {
             value={inputWeight}
             onChange={(e) => setInputWeight(e.target.value)}
             onKeyPress={handleKeyPress}
-            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isSubmitting}
+            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           />
           <button
             onClick={handleSubmit}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
+            disabled={isSubmitting}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
           >
-            บันทึก
+            {isSubmitting ? '...' : 'บันทึก'}
           </button>
         </div>
       </div>
@@ -364,8 +491,8 @@ const FitnessTracker = () => {
     const isWorkoutRunning = todayWorkout && todayWorkout.startTime && !todayWorkout.completed;
     
     const [currentTime, setCurrentTime] = useState(0);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // อัปเดตเวลาทุกวินาที
     useEffect(() => {
       let interval;
       if (isWorkoutRunning) {
@@ -390,45 +517,81 @@ const FitnessTracker = () => {
       return `${minutes}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const handleWorkoutAction = () => {
-      const newWorkoutData = { ...workoutData };
-      
-      if (isWorkoutDone) {
-        // เปลี่ยนจาก delete เป็น confirm dialog
-        const confirmReset = window.confirm('ต้องการรีเซ็ตการออกกำลังกายวันนี้หรือไม่?');
-        if (confirmReset) {
-          delete newWorkoutData[today];
+    const handleWorkoutAction = async () => {
+      setIsSubmitting(true);
+      try {
+        const newWorkoutData = { ...workoutData };
+        
+        if (isWorkoutDone) {
+          const confirmReset = window.confirm('ต้องการรีเซ็ตการออกกำลังกายวันนี้หรือไม่?');
+          if (confirmReset) {
+            delete newWorkoutData[today];
+            setCurrentTime(0);
+            
+            if (isOnline) {
+              try {
+                await workoutService.deleteWorkoutEntry(today);
+              } catch (error) {
+                // Handle silently, will be synced later
+              }
+            }
+          } else {
+            return;
+          }
+        } else if (isWorkoutRunning) {
+          const startTime = new Date(todayWorkout.startTime).getTime();
+          const endTime = new Date().getTime();
+          const totalSeconds = Math.floor((endTime - startTime) / 1000);
+          const totalMinutes = Math.round(totalSeconds / 60);
+          
+          const workoutEntry = {
+            ...todayWorkout,
+            completed: true,
+            endTime: new Date().toISOString(),
+            duration: totalMinutes,
+            actualSeconds: totalSeconds,
+            intensity: totalMinutes >= 45 ? 4 : totalMinutes >= 30 ? 3 : totalMinutes >= 15 ? 2 : 1
+          };
+          
+          newWorkoutData[today] = workoutEntry;
           setCurrentTime(0);
+          
+          if (isOnline) {
+            try {
+              await workoutService.upsertWorkoutEntry(today, workoutEntry);
+            } catch (error) {
+              addToPendingSync({ type: 'workout', date: today, data: workoutEntry });
+            }
+          } else {
+            addToPendingSync({ type: 'workout', date: today, data: workoutEntry });
+          }
         } else {
-          return; // ยกเลิกการลบ
+          const workoutEntry = {
+            startTime: new Date().toISOString(),
+            completed: false
+          };
+          
+          newWorkoutData[today] = workoutEntry;
+          
+          if (isOnline) {
+            try {
+              await workoutService.upsertWorkoutEntry(today, workoutEntry);
+            } catch (error) {
+              addToPendingSync({ type: 'workout', date: today, data: workoutEntry });
+            }
+          } else {
+            addToPendingSync({ type: 'workout', date: today, data: workoutEntry });
+          }
         }
-      } else if (isWorkoutRunning) {
-        // หยุดและบันทึกผล
-        const startTime = new Date(todayWorkout.startTime).getTime();
-        const endTime = new Date().getTime();
-        const totalSeconds = Math.floor((endTime - startTime) / 1000);
-        const totalMinutes = Math.round(totalSeconds / 60);
         
-        newWorkoutData[today] = {
-          ...todayWorkout,
-          completed: true,
-          endTime: new Date().toISOString(),
-          duration: totalMinutes,
-          actualSeconds: totalSeconds,
-          intensity: totalMinutes >= 45 ? 4 : totalMinutes >= 30 ? 3 : totalMinutes >= 15 ? 2 : 1
-        };
-        
-        setCurrentTime(0);
-      } else {
-        // เริ่มจับเวลา
-        newWorkoutData[today] = {
-          startTime: new Date().toISOString(),
-          completed: false
-        };
+        setWorkoutData(newWorkoutData);
+        saveToStorage('workoutData', newWorkoutData);
+      } catch (error) {
+        console.error('Error handling workout action:', error);
+        alert('เกิดข้อผิดพลาด กรุณาลองใหม่');
+      } finally {
+        setIsSubmitting(false);
       }
-      
-      setWorkoutData(newWorkoutData);
-      saveToStorage('workoutData', newWorkoutData);
     };
 
     const getButtonStyle = () => {
@@ -456,12 +619,13 @@ const FitnessTracker = () => {
       <div className="space-y-3">
         <button
           onClick={handleWorkoutAction}
-          className={`p-4 rounded-2xl border transition-colors w-full ${getButtonStyle()}`}
+          disabled={isSubmitting}
+          className={`p-4 rounded-2xl border transition-colors w-full disabled:opacity-50 ${getButtonStyle()}`}
         >
           <div className="flex items-center justify-center">
             {getButtonIcon()}
             <span className="text-sm font-medium">
-              {getButtonText()}
+              {isSubmitting ? 'กำลังบันทึก...' : getButtonText()}
             </span>
           </div>
         </button>
@@ -490,6 +654,55 @@ const FitnessTracker = () => {
       </div>
     );
   };
+
+  // Sync Status Component
+  const SyncStatusIndicator = () => {
+    const getSyncIcon = () => {
+      switch (syncStatus) {
+        case 'syncing':
+          return <Clock className="w-4 h-4 animate-spin text-blue-500" />;
+        case 'error':
+          return <AlertCircle className="w-4 h-4 text-red-500" />;
+        case 'offline':
+          return <WifiOff className="w-4 h-4 text-orange-500" />;
+        default:
+          return <Wifi className="w-4 h-4 text-green-500" />;
+      }
+    };
+
+    const getSyncText = () => {
+      switch (syncStatus) {
+        case 'syncing':
+          return 'กำลังซิงค์...';
+        case 'error':
+          return 'ซิงค์ไม่สำเร็จ';
+        case 'offline':
+          return `ออฟไลน์ (${pendingSync.length} รายการรอซิงค์)`;
+        default:
+          return 'ซิงค์แล้ว';
+      }
+    };
+
+    if (syncStatus === 'synced' && pendingSync.length === 0) return null;
+
+    return (
+      <div className="flex items-center space-x-1 text-xs">
+        {getSyncIcon()}
+        <span>{getSyncText()}</span>
+      </div>
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -530,6 +743,20 @@ const FitnessTracker = () => {
         </div>
       )}
 
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-500 text-white text-center py-2 text-sm">
+          <AlertCircle className="w-4 h-4 inline mr-2" />
+          {error}
+          <button 
+            onClick={() => setError(null)}
+            className="ml-2 text-red-200 hover:text-white"
+          >
+            <X className="w-4 h-4 inline" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className={`bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 ${showInstallPrompt ? 'mt-16' : ''}`}>
         <div className="max-w-md mx-auto flex justify-between items-center">
@@ -538,6 +765,7 @@ const FitnessTracker = () => {
             <p className="text-blue-100 text-sm">เป้าหมาย: 105 → 90 กก.</p>
           </div>
           <div className="flex items-center space-x-2">
+            <SyncStatusIndicator />
             {isOnline ? (
               <Wifi className="w-5 h-5 text-green-300" />
             ) : (
