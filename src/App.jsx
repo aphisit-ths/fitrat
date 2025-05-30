@@ -229,7 +229,7 @@ const FitnessTracker = () => {
     }));
   };
 
-  // สร้างข้อมูลการออกกำลังกายสำหรับกราฟ
+  // สร้างข้อมูลการออกกำลังกายสำหรับกราฟ - แก้ไขปัญหา duration ไม่แสดง
   const generateWorkoutChartData = () => {
     const data = [];
     const today = new Date();
@@ -240,9 +240,28 @@ const FitnessTracker = () => {
       const dateString = getDateString(date);
       const workoutInfo = workoutData[dateString];
       
+      let duration = 0;
+      if (workoutInfo) {
+        // ลองหาค่า duration จากหลายแหล่ง
+        duration = workoutInfo.duration || 0;
+        
+        // ถ้าไม่มี duration แต่มี actualSeconds ให้แปลงเป็นนาที
+        if (!duration && workoutInfo.actualSeconds) {
+          duration = Math.round(workoutInfo.actualSeconds / 60);
+        }
+        
+        // ถ้าไม่มี duration แต่มี startTime และ endTime
+        if (!duration && workoutInfo.startTime && workoutInfo.endTime) {
+          const start = new Date(workoutInfo.startTime);
+          const end = new Date(workoutInfo.endTime);
+          duration = Math.round((end - start) / (1000 * 60)); // แปลงเป็นนาที
+        }
+      }
+      
       data.push({
         date: getDisplayDate(dateString),
-        duration: workoutInfo ? workoutInfo.duration || 0 : 0
+        duration: duration,
+        rawDate: dateString
       });
     }
     return data;
@@ -258,13 +277,13 @@ const FitnessTracker = () => {
   };
 
   const StatCard = ({ icon: Icon, title, value, subtitle, color = "blue" }) => (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+    <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
       <div className="flex items-center justify-between mb-2">
-        <Icon className={`w-5 h-5 text-${color}-500`} />
-        <span className={`text-xs text-${color}-500 font-medium`}>{subtitle}</span>
+        <Icon className={`w-5 h-5 text-${color}-400`} />
+        <span className={`text-xs text-${color}-400 font-medium`}>{subtitle}</span>
       </div>
-      <h3 className="text-lg font-bold text-gray-800">{value}</h3>
-      <p className="text-xs text-gray-500">{title}</p>
+      <h3 className="text-lg font-bold text-white">{value}</h3>
+      <p className="text-xs text-gray-400">{title}</p>
     </div>
   );
 
@@ -322,9 +341,9 @@ const FitnessTracker = () => {
     };
 
     return (
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-        <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
-          <Scale className="w-4 h-4 mr-2 text-blue-500" />
+      <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
+        <h3 className="font-semibold text-white mb-3 flex items-center">
+          <Scale className="w-4 h-4 mr-2 text-blue-400" />
           บันทึกน้ำหนักวันนี้
         </h3>
         <div className="flex gap-2">
@@ -336,12 +355,12 @@ const FitnessTracker = () => {
             onChange={(e) => setInputWeight(e.target.value)}
             onKeyPress={handleKeyPress}
             disabled={isSubmitting}
-            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-center text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
           />
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
             {isSubmitting ? '...' : 'บันทึก'}
           </button>
@@ -355,11 +374,11 @@ const FitnessTracker = () => {
     
     const getIntensityColor = (intensity) => {
       const colors = [
-        'bg-gray-100', // 0 - ไม่ได้ออกกำลังกาย
-        'bg-green-200', // 1 - น้อย
-        'bg-green-400', // 2 - ปานกลาง  
-        'bg-green-600', // 3 - มาก
-        'bg-green-800'  // 4 - มากที่สุด
+        'bg-gray-800', // 0 - ไม่ได้ออกกำลังกาย
+        'bg-gray-600', // 1 - น้อย
+        'bg-gray-500', // 2 - ปานกลาง  
+        'bg-gray-400', // 3 - มาก
+        'bg-gray-300'  // 4 - มากที่สุด
       ];
       return colors[intensity] || colors[0];
     };
@@ -400,10 +419,10 @@ const FitnessTracker = () => {
     const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
     return (
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+      <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-800">ประวัติการออกกำลังกาย</h3>
-          <span className="text-xs text-gray-500">90 วันย้อนหลัง</span>
+          <h3 className="font-semibold text-white">ประวัติการออกกำลังกาย</h3>
+          <span className="text-xs text-gray-400">90 วันย้อนหลัง</span>
         </div>
         
         {/* Legend */}
@@ -425,9 +444,9 @@ const FitnessTracker = () => {
           <div className="flex gap-1">
             {/* Day labels */}
             <div className="flex flex-col gap-1 mr-2">
-              <div className="h-3"></div> {/* Spacer for month labels */}
+              <div className="h-3"></div>
               {dayNames.map((day, index) => (
-                <div key={index} className="h-3 text-xs text-gray-400 flex items-center">
+                <div key={index} className="h-3 text-xs text-gray-600 flex items-center">
                   {index % 2 === 1 ? day : ''}
                 </div>
               ))}
@@ -437,7 +456,7 @@ const FitnessTracker = () => {
             {weeks.map((week, weekIndex) => (
               <div key={weekIndex} className="flex flex-col gap-1">
                 {/* Month label */}
-                <div className="h-3 text-xs text-gray-400">
+                <div className="h-3 text-xs text-gray-600">
                   {week[0] && new Date(week[0].date).getDate() <= 7 
                     ? monthNames[new Date(week[0].date).getMonth()] 
                     : ''
@@ -462,19 +481,19 @@ const FitnessTracker = () => {
         {/* Stats */}
         <div className="mt-4 grid grid-cols-3 gap-4 text-center">
           <div>
-            <p className="font-bold text-green-600">
+            <p className="font-bold text-gray-300">
               {heatmapData.filter(d => d.intensity > 0).length}
             </p>
             <p className="text-xs text-gray-500">วันที่ออกกำลังกาย</p>
           </div>
           <div>
-            <p className="font-bold text-blue-600">
+            <p className="font-bold text-gray-300">
               {Math.round((heatmapData.filter(d => d.intensity > 0).length / 90) * 100)}%
             </p>
             <p className="text-xs text-gray-500">อัตราความสม่ำเสมอ</p>
           </div>
           <div>
-            <p className="font-bold text-purple-600">
+            <p className="font-bold text-gray-300">
               {Math.max(...heatmapData.slice(-7).map(d => d.intensity))}
             </p>
             <p className="text-xs text-gray-500">ความเข้มข้นสูงสุด (7 วัน)</p>
@@ -595,9 +614,9 @@ const FitnessTracker = () => {
     };
 
     const getButtonStyle = () => {
-      if (isWorkoutDone) return 'bg-green-50 border-green-200 text-green-700';
-      if (isWorkoutRunning) return 'bg-orange-50 border-orange-200 text-orange-700 animate-pulse';
-      return 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50';
+      if (isWorkoutDone) return 'bg-gray-800 border-gray-600 text-gray-300';
+      if (isWorkoutRunning) return 'bg-gray-700 border-gray-500 text-gray-200 animate-pulse';
+      return 'bg-black border-gray-700 text-gray-400 hover:bg-gray-900';
     };
 
     const getButtonText = () => {
@@ -631,22 +650,22 @@ const FitnessTracker = () => {
         </button>
         
         {isWorkoutRunning && (
-          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3 text-center">
-            <div className="text-lg font-bold text-orange-700 mb-1">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-3 text-center">
+            <div className="text-lg font-bold text-gray-200 mb-1">
               {formatTime(currentTime)}
             </div>
-            <div className="text-xs text-orange-600">
+            <div className="text-xs text-gray-400">
               💪 สู้ต่อไป! กดปุ่มด้านบนเมื่อเสร็จ
             </div>
           </div>
         )}
         
         {isWorkoutDone && (
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-3 text-center">
-            <div className="text-sm text-green-700">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-3 text-center">
+            <div className="text-sm text-gray-200">
               🎉 เยี่ยมมาก! วันนี้ออกกำลังกาย {todayWorkout.duration} นาที
             </div>
-            <div className="text-xs text-green-600 mt-1">
+            <div className="text-xs text-gray-400 mt-1">
               💾 ข้อมูลถูกบันทึกแล้ว - กดปุ่มด้านบนเพื่อรีเซ็ตและเริ่มใหม่
             </div>
           </div>
@@ -695,20 +714,20 @@ const FitnessTracker = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">กำลังโหลดข้อมูล...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">กำลังโหลดข้อมูล...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-black">
       {/* PWA Install Prompt */}
       {showInstallPrompt && (
-        <div className="fixed top-0 left-0 right-0 bg-blue-600 text-white p-3 z-50 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 bg-gray-900 text-white p-3 z-50 shadow-lg border-b border-gray-800">
           <div className="max-w-md mx-auto flex items-center justify-between">
             <div className="flex items-center">
               <Download className="w-5 h-5 mr-2" />
@@ -720,13 +739,13 @@ const FitnessTracker = () => {
             <div className="flex items-center space-x-2">
               <button
                 onClick={handleInstallApp}
-                className="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium"
+                className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-blue-700"
               >
                 ติดตั้ง
               </button>
               <button
                 onClick={dismissInstallPrompt}
-                className="text-white hover:text-gray-200"
+                className="text-gray-400 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -737,7 +756,7 @@ const FitnessTracker = () => {
 
       {/* Offline Indicator */}
       {!isOnline && (
-        <div className={`bg-orange-500 text-white text-center py-2 text-sm ${showInstallPrompt ? 'mt-16' : ''}`}>
+        <div className={`bg-gray-800 text-gray-300 text-center py-2 text-sm border-b border-gray-700 ${showInstallPrompt ? 'mt-16' : ''}`}>
           <WifiOff className="w-4 h-4 inline mr-2" />
           ออฟไลน์ - ข้อมูลจะซิงค์เมื่อกลับมาออนไลน์
         </div>
@@ -745,12 +764,12 @@ const FitnessTracker = () => {
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-500 text-white text-center py-2 text-sm">
+        <div className="bg-gray-900 text-gray-300 text-center py-2 text-sm border-b border-gray-800">
           <AlertCircle className="w-4 h-4 inline mr-2" />
           {error}
           <button 
             onClick={() => setError(null)}
-            className="ml-2 text-red-200 hover:text-white"
+            className="ml-2 text-red-300 hover:text-white"
           >
             <X className="w-4 h-4 inline" />
           </button>
@@ -758,47 +777,42 @@ const FitnessTracker = () => {
       )}
 
       {/* Header */}
-      <div className={`bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 ${showInstallPrompt ? 'mt-16' : ''}`}>
+      <div className={`bg-gradient-to-r from-black to-gray-900 text-white p-4 border-b border-gray-800 ${showInstallPrompt ? 'mt-16' : ''}`}>
         <div className="max-w-md mx-auto flex justify-between items-center">
           <div>
             <h1 className="text-xl font-bold mb-1">Oat's Fitness Journey</h1>
-            <p className="text-blue-100 text-sm">เป้าหมาย: 105 → 90 กก.</p>
+            <p className="text-gray-400 text-sm">เป้าหมาย: 105 → 90 กก.</p>
           </div>
           <div className="flex items-center space-x-2">
             <SyncStatusIndicator />
-            {isOnline ? (
-              <Wifi className="w-5 h-5 text-green-300" />
-            ) : (
-              <WifiOff className="w-5 h-5 text-orange-300" />
-            )}
           </div>
         </div>
       </div>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
         {/* Progress Overview */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+        <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-bold text-gray-800">ความคืบหน้า</h2>
-              <p className="text-sm text-gray-500">ลดไปแล้ว {currentData.totalLoss.toFixed(1)} กก.</p>
+              <h2 className="text-lg font-bold text-white">ความคืบหน้า</h2>
+              <p className="text-sm text-gray-400">ลดไปแล้ว {currentData.totalLoss.toFixed(1)} กก.</p>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-blue-600">{Math.round(currentData.progressPercent)}%</div>
+              <div className="text-2xl font-bold text-gray-300">{Math.round(currentData.progressPercent)}%</div>
               <div className="text-xs text-gray-500">ความสำเร็จ</div>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 text-center">
             <div>
-              <p className="text-lg font-bold text-gray-800">{currentData.startWeight}</p>
+              <p className="text-lg font-bold text-white">{currentData.startWeight}</p>
               <p className="text-xs text-gray-500">เริ่มต้น</p>
             </div>
             <div>
-              <p className="text-lg font-bold text-blue-600">{currentData.currentWeight}</p>
+              <p className="text-lg font-bold text-gray-300">{currentData.currentWeight}</p>
               <p className="text-xs text-gray-500">ปัจจุบัน</p>
             </div>
             <div>
-              <p className="text-lg font-bold text-green-600">{currentData.targetWeight}</p>
+              <p className="text-lg font-bold text-gray-300">{currentData.targetWeight}</p>
               <p className="text-xs text-gray-500">เป้าหมาย</p>
             </div>
           </div>
@@ -814,7 +828,7 @@ const FitnessTracker = () => {
             title="ลดไปแล้ว"
             value={`${currentData.totalLoss.toFixed(1)} กก.`}
             subtitle="เป้าหมาย 15 กก."
-            color="green"
+            color="gray"
           />
         </div>
 
@@ -822,7 +836,7 @@ const FitnessTracker = () => {
         <HeatmapCalendar />
 
         {/* Navigation Tabs */}
-        <div className="bg-white rounded-2xl p-1 shadow-sm border border-gray-100">
+        <div className="bg-black rounded-2xl p-1 shadow-xl border border-gray-800">
           <div className="grid grid-cols-2 gap-1">
             {[
               { id: 'weight', label: 'น้ำหนัก', icon: TrendingDown },
@@ -833,8 +847,8 @@ const FitnessTracker = () => {
                 onClick={() => setActiveTab(id)}
                 className={`flex flex-col items-center py-3 px-2 rounded-xl transition-colors ${
                   activeTab === id 
-                    ? 'bg-blue-500 text-white' 
-                    : 'text-gray-600 hover:bg-gray-100'
+                    ? 'bg-gray-800 text-white' 
+                    : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'
                 }`}
               >
                 <Icon className="w-4 h-4 mb-1" />
@@ -844,34 +858,91 @@ const FitnessTracker = () => {
           </div>
         </div>
 
-        {/* Charts */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+        {/* Charts - ปรับปรุงให้สวยงาม */}
+        <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
           {activeTab === 'weight' && (
             <div>
-              <h3 className="font-semibold text-gray-800 mb-4">กราฟน้ำหนัก (14 วันล่าสุด)</h3>
+              <h3 className="font-semibold text-white mb-4">กราฟน้ำหนัก (14 วันล่าสุด)</h3>
               {generateWeightChartData().length > 0 ? (
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={generateWeightChartData()}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" fontSize={12} />
-                    <YAxis domain={['dataMin - 1', 'dataMax + 1']} fontSize={12} />
-                    <Tooltip />
-                    <Line 
-                      type="monotone" 
-                      dataKey="weight" 
-                      stroke="#3b82f6" 
-                      strokeWidth={3}
-                      dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="target" 
-                      stroke="#ef4444" 
-                      strokeDasharray="5 5"
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="bg-gray-900 rounded-xl p-3">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={generateWeightChartData()} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                      <defs>
+                        {/* Gradient สำหรับเส้นน้ำหนัก */}
+                        <linearGradient id="weightGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f3f4f6" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#f3f4f6" stopOpacity={0.1}/>
+                        </linearGradient>
+                        {/* Gradient สำหรับเส้นเป้าหมาย */}
+                        <linearGradient id="targetGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6b7280" stopOpacity={0.6}/>
+                          <stop offset="95%" stopColor="#6b7280" stopOpacity={0.1}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="1 3" stroke="#374151" strokeWidth={0.5} />
+                      <XAxis 
+                        dataKey="date" 
+                        fontSize={11} 
+                        stroke="#6b7280" 
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ dy: 5 }}
+                      />
+                      <YAxis 
+                        domain={['dataMin - 1', 'dataMax + 1']} 
+                        fontSize={11} 
+                        stroke="#6b7280"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ dx: -5 }}
+                        width={35}
+                      />
+                      <Tooltip 
+                        contentStyle={{
+                          backgroundColor: '#111827',
+                          border: '1px solid #374151',
+                          borderRadius: '12px',
+                          color: '#f9fafb',
+                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                          fontSize: '12px'
+                        }}
+                        labelStyle={{ color: '#d1d5db', fontSize: '11px' }}
+                        cursor={{ stroke: '#6b7280', strokeWidth: 1, strokeDasharray: '3 3' }}
+                      />
+                      {/* เส้นเป้าหมาย */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="target" 
+                        stroke="#6b7280" 
+                        strokeDasharray="3 3"
+                        strokeWidth={1.5}
+                        dot={false}
+                        fill="url(#targetGradient)"
+                      />
+                      {/* เส้นน้ำหนัก */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="weight" 
+                        stroke="#f3f4f6" 
+                        strokeWidth={2.5}
+                        dot={{ 
+                          fill: '#f3f4f6', 
+                          strokeWidth: 0, 
+                          r: 4,
+                          filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                        }}
+                        activeDot={{ 
+                          r: 6, 
+                          fill: '#ffffff',
+                          stroke: '#374151',
+                          strokeWidth: 2,
+                          filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.4))'
+                        }}
+                        fill="url(#weightGradient)"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <Scale className="w-12 h-12 mx-auto mb-2 opacity-50" />
@@ -884,16 +955,80 @@ const FitnessTracker = () => {
 
           {activeTab === 'workout' && (
             <div>
-              <h3 className="font-semibold text-gray-800 mb-4">การออกกำลังกาย (14 วันล่าสุด)</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={generateWorkoutChartData()}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" fontSize={12} />
-                  <YAxis fontSize={12} />
-                  <Tooltip />
-                  <Bar dataKey="duration" fill="#10b981" radius={4} />
-                </BarChart>
-              </ResponsiveContainer>
+              <h3 className="font-semibold text-white mb-4">การออกกำลังกาย (14 วันล่าสุด)</h3>
+              <div className="bg-gray-900 rounded-xl p-3">
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={generateWorkoutChartData()} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                    <defs>
+                      {/* Gradient สำหรับ bar chart */}
+                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#d1d5db" stopOpacity={0.9}/>
+                        <stop offset="95%" stopColor="#6b7280" stopOpacity={0.7}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="1 3" stroke="#374151" strokeWidth={0.5} />
+                    <XAxis 
+                      dataKey="date" 
+                      fontSize={11} 
+                      stroke="#6b7280"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ dy: 5 }}
+                    />
+                    <YAxis 
+                      fontSize={11} 
+                      stroke="#6b7280"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ dx: -5 }}
+                      width={35}
+                      label={{ value: 'นาที', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#6b7280', fontSize: '10px' } }}
+                    />
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: '#111827',
+                        border: '1px solid #374151',
+                        borderRadius: '12px',
+                        color: '#f9fafb',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                        fontSize: '12px'
+                      }}
+                      labelStyle={{ color: '#d1d5db', fontSize: '11px' }}
+                      cursor={{ fill: 'rgba(107, 114, 128, 0.1)' }}
+                      formatter={(value) => [`${value} นาที`, 'ระยะเวลา']}
+                    />
+                    <Bar 
+                      dataKey="duration" 
+                      fill="url(#barGradient)" 
+                      radius={[4, 4, 0, 0]}
+                      stroke="#9ca3af"
+                      strokeWidth={0.5}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              
+              {/* แสดงข้อมูลสรุป */}
+              <div className="mt-3 grid grid-cols-3 gap-3 text-center text-xs">
+                <div className="bg-gray-800 rounded-lg p-2">
+                  <p className="font-bold text-gray-300">
+                    {generateWorkoutChartData().reduce((sum, day) => sum + day.duration, 0)}
+                  </p>
+                  <p className="text-gray-500">รวม (นาที)</p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-2">
+                  <p className="font-bold text-gray-300">
+                    {generateWorkoutChartData().filter(day => day.duration > 0).length}
+                  </p>
+                  <p className="text-gray-500">วันที่ออกกำลัง</p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-2">
+                  <p className="font-bold text-gray-300">
+                    {Math.round(generateWorkoutChartData().reduce((sum, day) => sum + day.duration, 0) / 14)}
+                  </p>
+                  <p className="text-gray-500">เฉลี่ย/วัน</p>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -904,12 +1039,12 @@ const FitnessTracker = () => {
         </div>
 
         {/* Tips */}
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-4 border border-blue-100">
-          <h3 className="font-semibold text-gray-800 mb-2 flex items-center">
-            <Target className="w-4 h-4 mr-2 text-blue-500" />
+        <div className="bg-gradient-to-r from-black to-gray-900 rounded-2xl p-4 border border-gray-800">
+          <h3 className="font-semibold text-white mb-2 flex items-center">
+            <Target className="w-4 h-4 mr-2 text-gray-400" />
             เทป ประจำวัน
           </h3>
-          <ul className="text-sm text-gray-600 space-y-1">
+          <ul className="text-sm text-gray-400 space-y-1">
             <li>• ดื่มน้ำ 2-2.5 ลิตรต่อวัน</li>
             <li>• ทานช้าๆ เคี้ยวให้ละเอียด</li>
             <li>• ออกกำลังกายตอนเช้า</li>
@@ -918,11 +1053,11 @@ const FitnessTracker = () => {
         </div>
 
         {/* Footer */}
-        <div className="text-center text-xs text-gray-400 py-4">
+        <div className="text-center text-xs text-gray-600 py-4">
           <div>สู้ๆ โอ๊ต! เป้าหมายอยู่ไม่ไกลแล้ว 💪</div>
           <div className="mt-1">📱 PWA Ready - ติดตั้งผ่าน browser ได้</div>
           {!showInstallPrompt && !deferredPrompt && (
-            <div className="mt-1 text-green-600">✅ แอปพร้อมใช้งานออฟไลน์</div>
+            <div className="mt-1 text-gray-500">✅ แอปพร้อมใช้งานออฟไลน์</div>
           )}
         </div>
       </div>
