@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Calendar, TrendingDown, Target, Activity, Coffee, Utensils, Scale, Clock, Wifi, WifiOff, Download, X, AlertCircle } from 'lucide-react';
+import { TrendingDown, Target, Activity, Clock, Wifi, WifiOff, Download, X, AlertCircle, Scale } from 'lucide-react';
 import { profileService, weightService, workoutService, checkSupabaseConnection } from './lib/supabase';
+import GoalTracker from './components/GoalTracker';
+import WorkoutTypes from './components/WorkoutTypes';
+import ProgressOverview from './components/ProgressOverview';
+import TodayStats from './components/TodayStats';
+import HeatmapCalendar from './components/HeatmapCalendar';
+import WeightInput from './components/WeightInput';
+import { goalService } from './lib/goalService';
 
 const FitnessTracker = () => {
   const [activeTab, setActiveTab] = useState('weight');
@@ -17,6 +24,7 @@ const FitnessTracker = () => {
   const [syncStatus, setSyncStatus] = useState('synced'); // 'synced', 'syncing', 'error', 'offline'
   const [error, setError] = useState(null);
   const [pendingSync, setPendingSync] = useState([]);
+  const [goals, setGoals] = useState([]);
 
   // PWA Install Prompt Detection
   useEffect(() => {
@@ -60,6 +68,12 @@ const FitnessTracker = () => {
       syncPendingChanges();
     }
   }, [isOnline, pendingSync]);
+
+  // Load goals on mount
+  useEffect(() => {
+    const savedGoals = goalService.getGoals();
+    setGoals(savedGoals);
+  }, []);
 
   const loadInitialData = async () => {
     try {
@@ -219,7 +233,15 @@ const FitnessTracker = () => {
     return data;
   };
 
-  // สร้างข้อมูลน้ำหนักสำหรับกราฟ
+  const currentData = {
+    startWeight: 105.0,
+    currentWeight: currentWeight,
+    targetWeight: 90.0,
+    finalTarget: 75.0,
+    totalLoss: 105.0 - currentWeight,
+    progressPercent: ((105.0 - currentWeight) / (105.0 - 90.0)) * 100
+  };
+
   const generateWeightChartData = () => {
     const sortedHistory = [...weightHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
     return sortedHistory.slice(-14).map(entry => ({
@@ -265,593 +287,6 @@ const FitnessTracker = () => {
       });
     }
     return data;
-  };
-
-  const currentData = {
-    startWeight: 105.0,
-    currentWeight: currentWeight,
-    targetWeight: 90.0,
-    finalTarget: 75.0,
-    totalLoss: 105.0 - currentWeight,
-    progressPercent: ((105.0 - currentWeight) / (105.0 - 90.0)) * 100
-  };
-
-  const StatCard = ({ icon: Icon, title, value, subtitle, color = "blue" }) => (
-    <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
-      <div className="flex items-center justify-between mb-2">
-        <Icon className={`w-5 h-5 text-${color}-400`} />
-        <span className={`text-xs text-${color}-400 font-medium`}>{subtitle}</span>
-      </div>
-      <h3 className="text-lg font-bold text-white">{value}</h3>
-      <p className="text-xs text-gray-400">{title}</p>
-    </div>
-  );
-
-  const WeightInput = () => {
-    const [inputWeight, setInputWeight] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    
-    const handleSubmit = async () => {
-      if (inputWeight && !isNaN(inputWeight) && parseFloat(inputWeight) > 0) {
-        const newWeight = parseFloat(inputWeight);
-        const today = getDateString();
-        
-        setIsSubmitting(true);
-        try {
-          // Update local state immediately
-          setCurrentWeight(newWeight);
-          const newHistory = [...weightHistory.filter(entry => entry.date !== today), { date: today, weight: newWeight }];
-          setWeightHistory(newHistory);
-          
-          // Save to localStorage
-          saveToStorage('currentWeight', newWeight);
-          saveToStorage('weightHistory', newHistory);
-          
-          if (isOnline) {
-            try {
-              // Try to sync immediately
-              await weightService.addWeightEntry(today, newWeight);
-              await profileService.updateProfile({ current_weight: newWeight });
-              setSyncStatus('synced');
-            } catch (error) {
-              // Add to pending sync if online sync fails
-              addToPendingSync({ type: 'weight', date: today, weight: newWeight });
-              setSyncStatus('error');
-            }
-          } else {
-            // Add to pending sync for offline mode
-            addToPendingSync({ type: 'weight', date: today, weight: newWeight });
-          }
-          
-          setInputWeight('');
-          alert('บันทึกน้ำหนักเรียบร้อย!');
-        } catch (error) {
-          console.error('Error saving weight:', error);
-          alert('เกิดข้อผิดพลาดในการบันทึก');
-        } finally {
-          setIsSubmitting(false);
-        }
-      }
-    };
-
-    const handleKeyPress = (e) => {
-      if (e.key === 'Enter') {
-        handleSubmit();
-      }
-    };
-
-    return (
-      <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
-        <h3 className="font-semibold text-white mb-3 flex items-center">
-          <Scale className="w-4 h-4 mr-2 text-blue-400" />
-          บันทึกน้ำหนักวันนี้
-        </h3>
-        <div className="flex gap-2">
-          <input
-            type="number"
-            step="0.1"
-            placeholder="กก."
-            value={inputWeight}
-            onChange={(e) => setInputWeight(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isSubmitting}
-            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-center text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {isSubmitting ? '...' : 'บันทึก'}
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  const HeatmapCalendar = () => {
-    const heatmapData = generateHeatmapData();
-    
-    const getIntensityColor = (intensity) => {
-      const colors = [
-        'bg-gray-800', // 0 - ไม่ได้ออกกำลังกาย
-        'bg-gray-600', // 1 - น้อย
-        'bg-gray-500', // 2 - ปานกลาง  
-        'bg-gray-400', // 3 - มาก
-        'bg-gray-300'  // 4 - มากที่สุด
-      ];
-      return colors[intensity] || colors[0];
-    };
-
-    const getWeeksData = () => {
-      const weeks = [];
-      let currentWeek = [];
-      
-      // เติมช่องว่างสำหรับวันแรกของสัปดาห์
-      const firstDay = heatmapData[0];
-      const startDayOfWeek = new Date(firstDay.date).getDay();
-      for (let i = 0; i < startDayOfWeek; i++) {
-        currentWeek.push(null);
-      }
-      
-      heatmapData.forEach((day, index) => {
-        currentWeek.push(day);
-        
-        if (currentWeek.length === 7) {
-          weeks.push([...currentWeek]);
-          currentWeek = [];
-        }
-      });
-      
-      // เติมช่องว่างสำหรับสัปดาห์สุดท้าย
-      while (currentWeek.length < 7 && currentWeek.length > 0) {
-        currentWeek.push(null);
-      }
-      if (currentWeek.length > 0) {
-        weeks.push(currentWeek);
-      }
-      
-      return weeks;
-    };
-
-    const weeks = getWeeksData();
-    const monthNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-
-    return (
-      <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-white">ประวัติการออกกำลังกาย</h3>
-          <span className="text-xs text-gray-400">90 วันย้อนหลัง</span>
-        </div>
-        
-        {/* Legend */}
-        <div className="flex items-center justify-between mb-4 text-xs text-gray-500">
-          <span>น้อย</span>
-          <div className="flex items-center gap-1">
-            {[0, 1, 2, 3, 4].map(intensity => (
-              <div
-                key={intensity}
-                className={`w-3 h-3 rounded-sm ${getIntensityColor(intensity)}`}
-              />
-            ))}
-          </div>
-          <span>มาก</span>
-        </div>
-
-        {/* Calendar Grid */}
-        <div className="overflow-x-auto">
-          <div className="flex gap-1">
-            {/* Day labels */}
-            <div className="flex flex-col gap-1 mr-2">
-              <div className="h-3"></div>
-              {dayNames.map((day, index) => (
-                <div key={index} className="h-3 text-xs text-gray-600 flex items-center">
-                  {index % 2 === 1 ? day : ''}
-                </div>
-              ))}
-            </div>
-            
-            {/* Calendar weeks */}
-            {weeks.map((week, weekIndex) => (
-              <div key={weekIndex} className="flex flex-col gap-1">
-                {/* Month label */}
-                <div className="h-3 text-xs text-gray-600">
-                  {week[0] && new Date(week[0].date).getDate() <= 7 
-                    ? monthNames[new Date(week[0].date).getMonth()] 
-                    : ''
-                  }
-                </div>
-                
-                {/* Week days */}
-                {week.map((day, dayIndex) => (
-                  <div
-                    key={`${weekIndex}-${dayIndex}`}
-                    className={`w-3 h-3 rounded-sm cursor-pointer hover:opacity-80 ${
-                      day ? getIntensityColor(day.intensity) : 'bg-transparent'
-                    }`}
-                    title={day ? `${getDisplayDate(day.date)}: ${day.intensity > 0 ? 'ออกกำลังกาย' : 'พัก'}` : ''}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="mt-4 grid grid-cols-3 gap-4 text-center">
-          <div>
-            <p className="font-bold text-gray-300">
-              {heatmapData.filter(d => d.intensity > 0).length}
-            </p>
-            <p className="text-xs text-gray-500">วันที่ออกกำลังกาย</p>
-          </div>
-          <div>
-            <p className="font-bold text-gray-300">
-              {Math.round((heatmapData.filter(d => d.intensity > 0).length / 90) * 100)}%
-            </p>
-            <p className="text-xs text-gray-500">อัตราความสม่ำเสมอ</p>
-          </div>
-          <div>
-            <p className="font-bold text-gray-300">
-              {Math.max(...heatmapData.slice(-7).map(d => d.intensity))}
-            </p>
-            <p className="text-xs text-gray-500">ความเข้มข้นสูงสุด (7 วัน)</p>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const WorkoutEntry = () => {
-    const [selectedDate, setSelectedDate] = useState(getDateString());
-    const [duration, setDuration] = useState('');
-    const [intensity, setIntensity] = useState(2);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [editingWorkout, setEditingWorkout] = useState(null);
-    const [showWorkoutList, setShowWorkoutList] = useState(false);
-
-    const quickDurations = [15, 30, 45, 60];
-    const intensityLabels = {
-      1: 'เบา',
-      2: 'ปานกลาง', 
-      3: 'หนัก',
-      4: 'หนักมาก'
-    };
-
-    const handleQuickDuration = (minutes) => {
-      setDuration(minutes.toString());
-      // Auto-set intensity based on duration
-      if (minutes >= 60) setIntensity(4);
-      else if (minutes >= 45) setIntensity(3);
-      else if (minutes >= 30) setIntensity(2);
-      else setIntensity(1);
-    };
-
-    const generateUUID = () => {
-      // Use crypto.randomUUID() if available, otherwise fallback
-      if (crypto && crypto.randomUUID) {
-        return crypto.randomUUID();
-      }
-      // Fallback for older browsers
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-      });
-    };
-
-    const handleSubmit = async () => {
-      if (!duration || !selectedDate || parseFloat(duration) <= 0) {
-        alert('กรุณากรอกวันที่และระยะเวลาให้ถูกต้อง');
-        return;
-      }
-
-      setIsSubmitting(true);
-      try {
-        const workoutEntry = {
-          ...(editingWorkout?.id && { id: editingWorkout.id }), // Only include ID if editing
-          date: selectedDate,
-          duration: parseInt(duration),
-          intensity: intensity,
-          completed: true,
-          startTime: new Date(selectedDate + 'T08:00:00').toISOString(),
-          endTime: new Date(selectedDate + 'T08:00:00').toISOString(),
-          actualSeconds: parseInt(duration) * 60,
-          workout_type: 'general'
-        };
-
-        // For local storage, generate UUID if new workout
-        const localWorkoutEntry = {
-          ...workoutEntry,
-          id: editingWorkout?.id || generateUUID()
-        };
-
-        const newWorkoutData = { ...workoutData };
-        newWorkoutData[selectedDate] = localWorkoutEntry;
-        setWorkoutData(newWorkoutData);
-        saveToStorage('workoutData', newWorkoutData);
-
-        if (isOnline) {
-          try {
-            const result = await workoutService.upsertWorkoutEntry(selectedDate, workoutEntry);
-            // Update local data with the returned ID from Supabase
-            if (result?.id) {
-              newWorkoutData[selectedDate] = { ...workoutEntry, id: result.id };
-              setWorkoutData(newWorkoutData);
-              saveToStorage('workoutData', newWorkoutData);
-            }
-            setSyncStatus('synced');
-          } catch (error) {
-            addToPendingSync({ type: 'workout', date: selectedDate, data: workoutEntry });
-            setSyncStatus('error');
-          }
-        } else {
-          addToPendingSync({ type: 'workout', date: selectedDate, data: workoutEntry });
-        }
-
-        // Reset form
-        setDuration('');
-        setIntensity(2);
-        setEditingWorkout(null);
-        setSelectedDate(getDateString());
-        
-        alert(editingWorkout ? 'แก้ไขข้อมูลเรียบร้อย!' : 'บันทึกการออกกำลังกายเรียบร้อย!');
-      } catch (error) {
-        console.error('Error saving workout:', error);
-        alert('เกิดข้อผิดพลาดในการบันทึก');
-      } finally {
-        setIsSubmitting(false);
-      }
-    };
-
-    const handleEdit = (date, workout) => {
-      setEditingWorkout({ ...workout, date });
-      setSelectedDate(date);
-      setDuration(workout.duration.toString());
-      setIntensity(workout.intensity);
-      setShowWorkoutList(false);
-    };
-
-    const handleDelete = async (date) => {
-      if (!window.confirm('ต้องการลบข้อมูลการออกกำลังกายนี้หรือไม่?')) return;
-
-      try {
-        const newWorkoutData = { ...workoutData };
-        delete newWorkoutData[date];
-        setWorkoutData(newWorkoutData);
-        saveToStorage('workoutData', newWorkoutData);
-
-        if (isOnline) {
-          try {
-            await workoutService.deleteWorkoutEntry(date);
-          } catch (error) {
-            // Handle silently, will be cleaned up later
-          }
-        }
-
-        alert('ลบข้อมูลเรียบร้อย!');
-      } catch (error) {
-        console.error('Error deleting workout:', error);
-        alert('เกิดข้อผิดพลาดในการลบ');
-      }
-    };
-
-    const getRecentWorkouts = () => {
-      const workouts = [];
-      const today = new Date();
-      
-      for (let i = 0; i < 14; i++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() - i);
-        const dateString = getDateString(date);
-        
-        if (workoutData[dateString]) {
-          workouts.push({
-            date: dateString,
-            ...workoutData[dateString]
-          });
-        }
-      }
-      
-      return workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
-    };
-
-    const WorkoutForm = () => (
-      <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
-        <h3 className="font-semibold text-white mb-4 flex items-center">
-          <Activity className="w-4 h-4 mr-2 text-blue-400" />
-          {editingWorkout ? 'แก้ไขการออกกำลังกาย' : 'บันทึกการออกกำลังกาย'}
-        </h3>
-        
-        {/* Date Input */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-300 mb-2">วันที่</label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Quick Duration Buttons */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-300 mb-2">ระยะเวลา (นาที)</label>
-          <div className="grid grid-cols-4 gap-2 mb-2">
-            {quickDurations.map(minutes => (
-              <button
-                key={minutes}
-                onClick={() => handleQuickDuration(minutes)}
-                className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                  duration === minutes.toString()
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                {minutes}
-              </button>
-            ))}
-          </div>
-          <input
-            type="number"
-            min="1"
-            max="300"
-            placeholder="หรือกรอกเอง"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Intensity Selector */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-300 mb-2">ความเข้มข้น</label>
-          <div className="grid grid-cols-4 gap-2">
-            {[1, 2, 3, 4].map(level => (
-              <button
-                key={level}
-                onClick={() => setIntensity(level)}
-                className={`py-2 px-2 rounded-lg text-xs font-medium transition-colors ${
-                  intensity === level
-                    ? 'bg-gray-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                }`}
-              >
-                {intensityLabels[level]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Submit Buttons */}
-        <div className="flex gap-2">
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {isSubmitting ? 'กำลังบันทึก...' : editingWorkout ? 'แก้ไข' : 'บันทึก'}
-          </button>
-          
-          {editingWorkout && (
-            <button
-              onClick={() => {
-                setEditingWorkout(null);
-                setDuration('');
-                setIntensity(2);
-                setSelectedDate(getDateString());
-              }}
-              className="py-2 px-4 bg-gray-700 text-gray-300 rounded-lg font-medium hover:bg-gray-600 transition-colors"
-            >
-              ยกเลิก
-            </button>
-          )}
-        </div>
-      </div>
-    );
-
-    const WorkoutList = () => {
-      const recentWorkouts = getRecentWorkouts();
-      
-      return (
-        <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-white flex items-center">
-              <Activity className="w-4 h-4 mr-2 text-gray-400" />
-              การออกกำลังกายล่าสุด
-            </h3>
-            <button
-              onClick={() => setShowWorkoutList(!showWorkoutList)}
-              className="text-blue-400 text-sm hover:text-blue-300"
-            >
-              {showWorkoutList ? 'ซ่อน' : `ดูทั้งหมด (${recentWorkouts.length})`}
-            </button>
-          </div>
-
-          {showWorkoutList && (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {recentWorkouts.length > 0 ? (
-                recentWorkouts.map(workout => (
-                  <div
-                    key={workout.date}
-                    className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center justify-between"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-white">
-                          {getDisplayDate(workout.date)}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {intensityLabels[workout.intensity]}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {workout.duration} นาที
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2 ml-3">
-                      <button
-                        onClick={() => handleEdit(workout.date, workout)}
-                        className="text-blue-400 hover:text-blue-300 text-xs p-1"
-                        title="แก้ไข"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => handleDelete(workout.date)}
-                        className="text-red-400 hover:text-red-300 text-xs p-1"
-                        title="ลบ"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-6 text-gray-500">
-                  <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">ยังไม่มีข้อมูลการออกกำลังกาย</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Quick Stats */}
-          {recentWorkouts.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-gray-700">
-              <div className="grid grid-cols-3 gap-3 text-center text-xs">
-                <div>
-                  <p className="font-bold text-gray-300">
-                    {recentWorkouts.reduce((sum, w) => sum + w.duration, 0)}
-                  </p>
-                  <p className="text-gray-500">รวม (นาที)</p>
-                </div>
-                <div>
-                  <p className="font-bold text-gray-300">
-                    {recentWorkouts.length}
-                  </p>
-                  <p className="text-gray-500">วันที่ออกกำลัง</p>
-                </div>
-                <div>
-                  <p className="font-bold text-gray-300">
-                    {Math.round(recentWorkouts.reduce((sum, w) => sum + w.duration, 0) / 14)}
-                  </p>
-                  <p className="text-gray-500">เฉลี่ย/วัน</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-    return (
-      <div className="space-y-4">
-        <WorkoutForm />
-        <WorkoutList />
-      </div>
-    );
   };
 
   // Sync Status Component
@@ -987,49 +422,20 @@ const FitnessTracker = () => {
 
       <div className="max-w-md mx-auto p-4 space-y-4">
         {/* Progress Overview */}
-        <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg font-bold text-white">ความคืบหน้า</h2>
-              <p className="text-sm text-gray-400">ลดไปแล้ว {currentData.totalLoss.toFixed(1)} กก.</p>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-gray-300">{Math.round(currentData.progressPercent)}%</div>
-              <div className="text-xs text-gray-500">ความสำเร็จ</div>
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <p className="text-lg font-bold text-white">{currentData.startWeight}</p>
-              <p className="text-xs text-gray-500">เริ่มต้น</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-gray-300">{currentData.currentWeight}</p>
-              <p className="text-xs text-gray-500">ปัจจุบัน</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-gray-300">{currentData.targetWeight}</p>
-              <p className="text-xs text-gray-500">เป้าหมาย</p>
-            </div>
-          </div>
-        </div>
+        <ProgressOverview currentData={currentData} />
 
-        {/* Weight Input */}
-        <WeightInput />
+        {/* Goals & Streaks */}
+        <GoalTracker 
+          workoutData={workoutData}
+          goals={goals}
+          onUpdateGoal={handleUpdateGoals}
+        />
 
         {/* Today's Stats */}
-        <div className="grid grid-cols-1 gap-3">
-          <StatCard
-            icon={TrendingDown}
-            title="ลดไปแล้ว"
-            value={`${currentData.totalLoss.toFixed(1)} กก.`}
-            subtitle="เป้าหมาย 15 กก."
-            color="gray"
-          />
-        </div>
+        <TodayStats currentData={currentData} />
 
         {/* Heatmap Calendar */}
-        <HeatmapCalendar />
+        <HeatmapCalendar workoutData={workoutData} />
 
         {/* Navigation Tabs */}
         <div className="bg-black rounded-2xl p-1 shadow-xl border border-gray-800">
@@ -1054,7 +460,7 @@ const FitnessTracker = () => {
           </div>
         </div>
 
-        {/* Charts - ปรับปรุงให้สวยงาม */}
+        {/* Charts */}
         <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
           {activeTab === 'weight' && (
             <div>
@@ -1187,22 +593,31 @@ const FitnessTracker = () => {
                 </ResponsiveContainer>
               </div>
               
-              {/* แสดงข้อมูลสรุป */}
+              {/* แสดงข้อมูลสรุป - พร้อมสีสวยงาม */}
               <div className="mt-3 grid grid-cols-3 gap-3 text-center text-xs">
-                <div className="bg-gray-800 rounded-lg p-2">
-                  <p className="font-bold text-gray-300">
+                <div className="bg-gray-800 rounded-lg p-2 border border-blue-500/20">
+                  <div className="w-5 h-5 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-1">
+                    <Clock className="w-3 h-3 text-white" />
+                  </div>
+                  <p className="font-bold text-blue-300">
                     {generateWorkoutChartData().reduce((sum, day) => sum + day.duration, 0)}
                   </p>
                   <p className="text-gray-500">รวม (นาที)</p>
                 </div>
-                <div className="bg-gray-800 rounded-lg p-2">
-                  <p className="font-bold text-gray-300">
+                <div className="bg-gray-800 rounded-lg p-2 border border-green-500/20">
+                  <div className="w-5 h-5 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center mx-auto mb-1">
+                    <Activity className="w-3 h-3 text-white" />
+                  </div>
+                  <p className="font-bold text-green-300">
                     {generateWorkoutChartData().filter(day => day.duration > 0).length}
                   </p>
                   <p className="text-gray-500">วันที่ออกกำลัง</p>
                 </div>
-                <div className="bg-gray-800 rounded-lg p-2">
-                  <p className="font-bold text-gray-300">
+                <div className="bg-gray-800 rounded-lg p-2 border border-purple-500/20">
+                  <div className="w-5 h-5 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-1">
+                    <TrendingDown className="w-3 h-3 text-white" />
+                  </div>
+                  <p className="font-bold text-purple-300">
                     {Math.round(generateWorkoutChartData().reduce((sum, day) => sum + day.duration, 0) / 14)}
                   </p>
                   <p className="text-gray-500">เฉลี่ย/วัน</p>
@@ -1212,10 +627,21 @@ const FitnessTracker = () => {
           )}
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 gap-3">
-          <WorkoutEntry />
-        </div>
+        {/* Quick Actions - Workout Entry */}
+        <WorkoutEntry />
+
+        {/* Weight Input */}
+        <WeightInput 
+          weightHistory={weightHistory}
+          setCurrentWeight={setCurrentWeight}
+          setWeightHistory={setWeightHistory}
+          saveToStorage={saveToStorage}
+          isOnline={isOnline}
+          weightService={weightService}
+          profileService={profileService}
+          setSyncStatus={setSyncStatus}
+          addToPendingSync={addToPendingSync}
+        />
 
         {/* Tips */}
         <div className="bg-gradient-to-r from-black to-gray-900 rounded-2xl p-4 border border-gray-800">
@@ -1242,6 +668,366 @@ const FitnessTracker = () => {
       </div>
     </div>
   );
+
+  // WorkoutEntry Component - ย้ายมาอยู่ใน App.jsx
+  function WorkoutEntry() {
+    const [selectedDate, setSelectedDate] = useState(getDateString());
+    const [duration, setDuration] = useState('');
+    const [intensity, setIntensity] = useState(2);
+    const [workoutType, setWorkoutType] = useState('general');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [editingWorkout, setEditingWorkout] = useState(null);
+    const [showWorkoutList, setShowWorkoutList] = useState(false);
+
+    const quickDurations = [15, 30, 45, 60];
+    const intensityLabels = {
+      1: 'เบา',
+      2: 'ปานกลาง', 
+      3: 'หนัก',
+      4: 'หนักมาก'
+    };
+
+    const handleQuickDuration = (minutes) => {
+      setDuration(minutes.toString());
+      if (minutes >= 60) setIntensity(4);
+      else if (minutes >= 45) setIntensity(3);
+      else if (minutes >= 30) setIntensity(2);
+      else setIntensity(1);
+    };
+
+    const generateUUID = () => {
+      if (crypto && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    };
+
+    const handleSubmit = async () => {
+      if (!duration || !selectedDate || parseFloat(duration) <= 0) {
+        alert('กรุณากรอกวันที่และระยะเวลาให้ถูกต้อง');
+        return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        const workoutEntry = {
+          ...(editingWorkout?.id && { id: editingWorkout.id }),
+          date: selectedDate,
+          duration: parseInt(duration),
+          intensity: intensity,
+          workout_type: workoutType,
+          completed: true,
+          startTime: new Date(selectedDate + 'T08:00:00').toISOString(),
+          endTime: new Date(selectedDate + 'T08:00:00').toISOString(),
+          actualSeconds: parseInt(duration) * 60
+        };
+
+        const localWorkoutEntry = {
+          ...workoutEntry,
+          id: editingWorkout?.id || generateUUID()
+        };
+
+        const newWorkoutData = { ...workoutData };
+        newWorkoutData[selectedDate] = localWorkoutEntry;
+        setWorkoutData(newWorkoutData);
+        saveToStorage('workoutData', newWorkoutData);
+
+        if (isOnline) {
+          try {
+            const result = await workoutService.upsertWorkoutEntry(selectedDate, workoutEntry);
+            if (result?.id) {
+              newWorkoutData[selectedDate] = { ...workoutEntry, id: result.id };
+              setWorkoutData(newWorkoutData);
+              saveToStorage('workoutData', newWorkoutData);
+            }
+            setSyncStatus('synced');
+          } catch (error) {
+            addToPendingSync({ type: 'workout', date: selectedDate, data: workoutEntry });
+            setSyncStatus('error');
+          }
+        } else {
+          addToPendingSync({ type: 'workout', date: selectedDate, data: workoutEntry });
+        }
+
+        setDuration('');
+        setIntensity(2);
+        setWorkoutType('general');
+        setEditingWorkout(null);
+        setSelectedDate(getDateString());
+        
+        alert(editingWorkout ? 'แก้ไขข้อมูลเรียบร้อย!' : 'บันทึกการออกกำลังกายเรียบร้อย!');
+      } catch (error) {
+        console.error('Error saving workout:', error);
+        alert('เกิดข้อผิดพลาดในการบันทึก');
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+
+    const handleEdit = (date, workout) => {
+      setEditingWorkout({ ...workout, date });
+      setSelectedDate(date);
+      setDuration(workout.duration.toString());
+      setIntensity(workout.intensity);
+      setWorkoutType(workout.workout_type || 'general');
+      setShowWorkoutList(false);
+    };
+
+    const handleDelete = async (date) => {
+      if (!window.confirm('ต้องการลบข้อมูลการออกกำลังกายนี้หรือไม่?')) return;
+
+      try {
+        const newWorkoutData = { ...workoutData };
+        delete newWorkoutData[date];
+        setWorkoutData(newWorkoutData);
+        saveToStorage('workoutData', newWorkoutData);
+
+        if (isOnline) {
+          try {
+            await workoutService.deleteWorkoutEntry(date);
+          } catch (error) {
+            // Handle silently
+          }
+        }
+
+        alert('ลบข้อมูลเรียบร้อย!');
+      } catch (error) {
+        console.error('Error deleting workout:', error);
+        alert('เกิดข้อผิดพลาดในการลบ');
+      }
+    };
+
+    const getRecentWorkouts = () => {
+      const workouts = [];
+      const today = new Date();
+      
+      for (let i = 0; i < 14; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        const dateString = getDateString(date);
+        
+        if (workoutData[dateString]) {
+          workouts.push({
+            date: dateString,
+            ...workoutData[dateString]
+          });
+        }
+      }
+      
+      return workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
+    };
+
+    const recentWorkouts = getRecentWorkouts();
+
+    return (
+      <div className="space-y-4">
+        {/* Workout Form */}
+        <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
+          <h3 className="font-semibold text-white mb-4 flex items-center">
+            <Activity className="w-4 h-4 mr-2 text-blue-400" />
+            {editingWorkout ? 'แก้ไขการออกกำลังกาย' : 'บันทึกการออกกำลังกาย'}
+          </h3>
+          
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2">วันที่</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="mb-4">
+            <WorkoutTypes 
+              selectedType={workoutType}
+              onTypeChange={setWorkoutType}
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2">ระยะเวลา (นาที)</label>
+            <div className="grid grid-cols-4 gap-2 mb-2">
+              {quickDurations.map(minutes => (
+                <button
+                  key={minutes}
+                  onClick={() => handleQuickDuration(minutes)}
+                  className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    duration === minutes.toString()
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  {minutes}
+                </button>
+              ))}
+            </div>
+            <input
+              type="number"
+              min="1"
+              max="300"
+              placeholder="หรือกรอกเอง"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2">ความเข้มข้น</label>
+            <div className="grid grid-cols-4 gap-2">
+              {[1, 2, 3, 4].map(level => (
+                <button
+                  key={level}
+                  onClick={() => setIntensity(level)}
+                  className={`py-2 px-2 rounded-lg text-xs font-medium transition-colors ${
+                    intensity === level
+                      ? 'bg-gray-600 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  }`}
+                >
+                  {intensityLabels[level]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {isSubmitting ? 'กำลังบันทึก...' : editingWorkout ? 'แก้ไข' : 'บันทึก'}
+            </button>
+            
+            {editingWorkout && (
+              <button
+                onClick={() => {
+                  setEditingWorkout(null);
+                  setDuration('');
+                  setIntensity(2);
+                  setWorkoutType('general');
+                  setSelectedDate(getDateString());
+                }}
+                className="py-2 px-4 bg-gray-700 text-gray-300 rounded-lg font-medium hover:bg-gray-600 transition-colors"
+              >
+                ยกเลิก
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Workout List */}
+        <div className="bg-black rounded-2xl p-4 shadow-xl border border-gray-800">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-white flex items-center">
+              <Activity className="w-4 h-4 mr-2 text-gray-400" />
+              การออกกำลังกายล่าสุด
+            </h3>
+            <button
+              onClick={() => setShowWorkoutList(!showWorkoutList)}
+              className="text-blue-400 text-sm hover:text-blue-300"
+            >
+              {showWorkoutList ? 'ซ่อน' : `ดูทั้งหมด (${recentWorkouts.length})`}
+            </button>
+          </div>
+
+          {showWorkoutList && (
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {recentWorkouts.length > 0 ? (
+                recentWorkouts.map(workout => (
+                  <div
+                    key={workout.date}
+                    className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center justify-between"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-white">
+                          {getDisplayDate(workout.date)}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {intensityLabels[workout.intensity]}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {workout.duration} นาที
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 ml-3">
+                      <button
+                        onClick={() => handleEdit(workout.date, workout)}
+                        className="text-blue-400 hover:text-blue-300 text-xs p-1"
+                        title="แก้ไข"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => handleDelete(workout.date)}
+                        className="text-red-400 hover:text-red-300 text-xs p-1"
+                        title="ลบ"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6 text-gray-500">
+                  <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">ยังไม่มีข้อมูลการออกกำลังกาย</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {recentWorkouts.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-gray-700">
+              <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                <div className="bg-gray-800/50 rounded-lg p-2 border border-orange-500/20">
+                  <div className="w-4 h-4 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center mx-auto mb-1">
+                    <Clock className="w-2 h-2 text-white" />
+                  </div>
+                  <p className="font-bold text-orange-300">
+                    {recentWorkouts.reduce((sum, w) => sum + w.duration, 0)}
+                  </p>
+                  <p className="text-gray-500">รวม (นาที)</p>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-2 border border-blue-500/20">
+                  <div className="w-4 h-4 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-1">
+                    <Activity className="w-2 h-2 text-white" />
+                  </div>
+                  <p className="font-bold text-blue-300">
+                    {recentWorkouts.length}
+                  </p>
+                  <p className="text-gray-500">วันที่ออกกำลัง</p>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-2 border border-green-500/20">
+                  <div className="w-4 h-4 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center mx-auto mb-1">
+                    <Target className="w-2 h-2 text-white" />
+                  </div>
+                  <p className="font-bold text-green-300">
+                    {Math.round(recentWorkouts.reduce((sum, w) => sum + w.duration, 0) / 14)}
+                  </p>
+                  <p className="text-gray-500">เฉลี่ย/วัน</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function handleUpdateGoals(newGoals) {
+    setGoals(newGoals);
+    goalService.saveGoals(newGoals);
+  }
 };
 
 export default FitnessTracker;
